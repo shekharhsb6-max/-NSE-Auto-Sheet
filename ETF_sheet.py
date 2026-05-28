@@ -47,26 +47,6 @@ worksheet = client.open_by_key(
 ).worksheet("RAW_DATA")
 
 # =========================================================
-# ETF FILTERS
-# =========================================================
-
-# Include only ETF-type symbols
-
-ETF_KEYWORDS = (
-    "BEES|ETF|MON100|GOLD|SILVER|"
-    "BANK|IT|PHARMA|AUTO|CPSE|"
-    "INFRA|PSUBNK|NIFTY"
-)
-
-# Exclude debt / liquid ETFs
-
-EXCLUDE_KEYWORDS = (
-    "LIQUID|BOND|GILT|"
-    "TREASURY|OVERNIGHT|"
-    "MONEYMARKET|SDL|SHORTTERM"
-)
-
-# =========================================================
 # NSE DATA FETCHER
 # =========================================================
 
@@ -101,19 +81,26 @@ def fetch_bhavcopy_for_date(date_obj):
 
     try:
 
-        # Visit NSE first
+        # =================================================
+        # VISIT NSE FIRST
+        # =================================================
+
         session.get(
             "https://www.nseindia.com",
             timeout=10
         )
 
-        # Download Bhavcopy
+        # =================================================
+        # DOWNLOAD BHAVCOPY
+        # =================================================
+
         response = session.get(
             url,
             timeout=30
         )
 
         print(f"Trying Date: {date_str}")
+
         print(f"Status Code: {response.status_code}")
 
         if response.status_code == 200:
@@ -128,14 +115,18 @@ def fetch_bhavcopy_for_date(date_obj):
 
                     df = pd.read_csv(f)
 
+                    # =====================================
+                    # CLEAN COLUMN NAMES
+                    # =====================================
+
                     df.columns = [
                         c.strip()
                         for c in df.columns
                     ]
 
-                    # =================================================
+                    # =====================================
                     # COLUMN DETECTION
-                    # =================================================
+                    # =====================================
 
                     sym_col = next(
                         (
@@ -196,9 +187,9 @@ def fetch_bhavcopy_for_date(date_obj):
                         None
                     )
 
-                    # =================================================
+                    # =====================================
                     # VALIDATION
-                    # =================================================
+                    # =====================================
 
                     if not all([
                         sym_col,
@@ -210,9 +201,9 @@ def fetch_bhavcopy_for_date(date_obj):
 
                         return None
 
-                    # =================================================
+                    # =====================================
                     # ONLY EQ SERIES
-                    # =================================================
+                    # =====================================
 
                     if series_col:
 
@@ -222,37 +213,9 @@ def fetch_bhavcopy_for_date(date_obj):
                             .str.strip() == 'EQ'
                         ]
 
-                    # =================================================
-                    # ETF FILTER
-                    # =================================================
-
-                    df = df[
-                        df[sym_col]
-                        .astype(str)
-                        .str.contains(
-                            ETF_KEYWORDS,
-                            case=False,
-                            na=False
-                        )
-                    ]
-
-                    # =================================================
-                    # EXCLUDE DEBT ETFs
-                    # =================================================
-
-                    df = df[
-                        ~df[sym_col]
-                        .astype(str)
-                        .str.contains(
-                            EXCLUDE_KEYWORDS,
-                            case=False,
-                            na=False
-                        )
-                    ]
-
-                    # =================================================
+                    # =====================================
                     # NUMERIC CONVERSION
-                    # =================================================
+                    # =====================================
 
                     df[turnover_col] = pd.to_numeric(
                         df[turnover_col],
@@ -266,22 +229,26 @@ def fetch_bhavcopy_for_date(date_obj):
                             errors='coerce'
                         )
 
+                    # =====================================
+                    # REMOVE EMPTY TURNOVER
+                    # =====================================
+
                     df = df.dropna(
                         subset=[turnover_col]
                     )
 
-                    # =================================================
+                    # =====================================
                     # SORT BY TURNOVER
-                    # =================================================
+                    # =====================================
 
-                    df_top = df.sort_values(
+                    df = df.sort_values(
                         by=turnover_col,
                         ascending=False
-                    ).head(50)
+                    )
 
-                    # =================================================
+                    # =====================================
                     # FINAL COLUMNS
-                    # =================================================
+                    # =====================================
 
                     final_cols = [
                         sym_col,
@@ -291,9 +258,11 @@ def fetch_bhavcopy_for_date(date_obj):
 
                     if volume_col:
 
-                        final_cols.append(volume_col)
+                        final_cols.append(
+                            volume_col
+                        )
 
-                    return df_top[
+                    return df[
                         final_cols
                     ].values.tolist()
 
@@ -320,6 +289,7 @@ for i in range(7):
     test_date = date - timedelta(days=i)
 
     # Skip weekends
+
     if test_date.weekday() >= 5:
 
         continue
@@ -344,25 +314,50 @@ if data_to_insert:
 
     try:
 
-        # Clear old data
+        # =============================================
+        # CLEAR OLD DATA ONLY
+        # =============================================
+
         worksheet.batch_clear([
-            'A2:D100'
+            'A2:D5000'
         ])
 
-        # Upload new data
+        # =============================================
+        # HEADERS
+        # =============================================
+
+        headers = [[
+            "SYMBOL",
+            "TURNOVER",
+            "CLOSE_PRICE",
+            "VOLUME"
+        ]]
+
+        worksheet.update(
+            'A1',
+            headers
+        )
+
+        # =============================================
+        # UPLOAD DATA
+        # =============================================
+
         worksheet.update(
             'A2',
             data_to_insert
         )
 
-        # Status
+        # =============================================
+        # STATUS MESSAGE
+        # =============================================
+
         ist_now = (
             datetime.utcnow() +
             timedelta(hours=5, minutes=30)
         ).strftime('%d-%b %H:%M')
 
         status_msg = (
-            f"ETF Data Date: {fetched_date_str} | "
+            f"Bhavcopy Date: {fetched_date_str} | "
             f"Updated: {ist_now} IST"
         )
 
@@ -372,8 +367,8 @@ if data_to_insert:
         )
 
         print(
-            f"SUCCESS: Top 50 Non-Debt ETFs "
-            f"Updated for {fetched_date_str}"
+            f"SUCCESS: RAW_DATA Updated "
+            f"for {fetched_date_str}"
         )
 
     except Exception as e:
