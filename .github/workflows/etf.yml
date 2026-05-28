@@ -28,6 +28,6 @@ jobs:
         run: |
           echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
 
-      - name: Run ETF Script
-        run: |
-          python etf_downloader.py
+     - name: Run ETF Script
+  run: |
+    python ETF_sheet.py
