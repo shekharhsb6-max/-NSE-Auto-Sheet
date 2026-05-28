@@ -3,11 +3,12 @@ name: Update NSE ETFs to Google Sheet
 on:
   schedule:
     - cron: '30 12 * * 1-5'
-    
+
   workflow_dispatch:
 
 jobs:
   update-sheet:
+
     runs-on: ubuntu-latest
 
     steps:
@@ -28,6 +29,6 @@ jobs:
         run: |
           echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
 
-     - name: Run ETF Script
-  run: |
-    python ETF_sheet.py
+      - name: Run ETF Script
+        run: |
+          python ETF_sheet.py
