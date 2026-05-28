@@ -1,0 +1,131 @@
+# =========================================================
+# AUTO DAILY ETF BHAVCOPY DOWNLOADER + SCHEDULER
+# =========================================================
+#
+# FILE NAME:
+#     etf.iml
+#
+# MAIN PYTHON FILE:
+#     etf_downloader.py
+#
+# WHAT THIS SCRIPT DOES
+# ---------------------------------------------------------
+# 1. Runs ETF downloader automatically every day
+# 2. Schedules task for NSE trading days timing
+# 3. Updates Google Sheet automatically
+#
+# =========================================================
+# INSTALL REQUIRED LIBRARIES
+# =========================================================
+#
+# pip install schedule pandas requests gspread oauth2client
+#
+# =========================================================
+# HOW TO RUN
+# =========================================================
+#
+# STEP 1:
+# Save your main downloader script as:
+#
+#     etf_downloader.py
+#
+# STEP 2:
+# Save this scheduler script as:
+#
+#     etf_scheduler.py
+#
+# STEP 3:
+# Keep these files together:
+#
+#     credentials.json
+#     etf_downloader.py
+#     etf_scheduler.py
+#     etf.iml
+#
+# STEP 4:
+# Run:
+#
+#     python etf_scheduler.py
+#
+# =========================================================
+
+import schedule
+import time
+import subprocess
+from datetime import datetime
+
+# =========================================================
+# FUNCTION TO RUN ETF DOWNLOADER
+# =========================================================
+
+def run_etf_downloader():
+
+    print("=" * 60)
+    print("STARTING ETF DOWNLOAD")
+    print("TIME :", datetime.now())
+    print("=" * 60)
+
+    try:
+
+        result = subprocess.run(
+            ["python", "etf_downloader.py"],
+            capture_output=True,
+            text=True
+        )
+
+        print(result.stdout)
+
+        if result.stderr:
+            print("ERRORS:")
+            print(result.stderr)
+
+        print("=" * 60)
+        print("DOWNLOAD COMPLETED")
+        print("=" * 60)
+
+    except Exception as e:
+
+        print("FAILED :", e)
+
+# =========================================================
+# SCHEDULE SETTINGS
+# =========================================================
+#
+# NSE bhavcopy usually available after market hours.
+#
+# Recommended timings:
+#
+# 5:30 PM
+# or
+# 6:00 PM
+#
+# =========================================================
+
+schedule.every().monday.at("18:00").do(run_etf_downloader)
+
+schedule.every().tuesday.at("18:00").do(run_etf_downloader)
+
+schedule.every().wednesday.at("18:00").do(run_etf_downloader)
+
+schedule.every().thursday.at("18:00").do(run_etf_downloader)
+
+schedule.every().friday.at("18:00").do(run_etf_downloader)
+
+# =========================================================
+# START
+# =========================================================
+
+print("=" * 60)
+print("ETF AUTO SCHEDULER STARTED")
+print("Waiting for scheduled time...")
+print("=" * 60)
+
+# =========================================================
+# LOOP FOREVER
+# =========================================================
+
+while True:
+
+    schedule.run_pending()
+
+    time.sleep(30)
