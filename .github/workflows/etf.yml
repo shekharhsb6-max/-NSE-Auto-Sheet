@@ -1,131 +1,33 @@
-# =========================================================
-# AUTO DAILY ETF BHAVCOPY DOWNLOADER + SCHEDULER
-# =========================================================
-#
-# FILE NAME:
-#     etf.iml
-#
-# MAIN PYTHON FILE:
-#     etf_downloader.py
-#
-# WHAT THIS SCRIPT DOES
-# ---------------------------------------------------------
-# 1. Runs ETF downloader automatically every day
-# 2. Schedules task for NSE trading days timing
-# 3. Updates Google Sheet automatically
-#
-# =========================================================
-# INSTALL REQUIRED LIBRARIES
-# =========================================================
-#
-# pip install schedule pandas requests gspread oauth2client
-#
-# =========================================================
-# HOW TO RUN
-# =========================================================
-#
-# STEP 1:
-# Save your main downloader script as:
-#
-#     etf_downloader.py
-#
-# STEP 2:
-# Save this scheduler script as:
-#
-#     etf_scheduler.py
-#
-# STEP 3:
-# Keep these files together:
-#
-#     credentials.json
-#     etf_downloader.py
-#     etf_scheduler.py
-#     etf.iml
-#
-# STEP 4:
-# Run:
-#
-#     python etf_scheduler.py
-#
-# =========================================================
+name: Update NSE ETFs to Google Sheet
 
-import schedule
-import time
-import subprocess
-from datetime import datetime
+on:
+  schedule:
+    - cron: '30 12 * * 1-5'
+    
+  workflow_dispatch:
 
-# =========================================================
-# FUNCTION TO RUN ETF DOWNLOADER
-# =========================================================
+jobs:
+  update-sheet:
+    runs-on: ubuntu-latest
 
-def run_etf_downloader():
+    steps:
 
-    print("=" * 60)
-    print("STARTING ETF DOWNLOAD")
-    print("TIME :", datetime.now())
-    print("=" * 60)
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    try:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-        result = subprocess.run(
-            ["python", "etf_downloader.py"],
-            capture_output=True,
-            text=True
-        )
+      - name: Install Dependencies
+        run: |
+          pip install pandas requests gspread oauth2client
 
-        print(result.stdout)
+      - name: Create credentials.json
+        run: |
+          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
 
-        if result.stderr:
-            print("ERRORS:")
-            print(result.stderr)
-
-        print("=" * 60)
-        print("DOWNLOAD COMPLETED")
-        print("=" * 60)
-
-    except Exception as e:
-
-        print("FAILED :", e)
-
-# =========================================================
-# SCHEDULE SETTINGS
-# =========================================================
-#
-# NSE bhavcopy usually available after market hours.
-#
-# Recommended timings:
-#
-# 5:30 PM
-# or
-# 6:00 PM
-#
-# =========================================================
-
-schedule.every().monday.at("18:00").do(run_etf_downloader)
-
-schedule.every().tuesday.at("18:00").do(run_etf_downloader)
-
-schedule.every().wednesday.at("18:00").do(run_etf_downloader)
-
-schedule.every().thursday.at("18:00").do(run_etf_downloader)
-
-schedule.every().friday.at("18:00").do(run_etf_downloader)
-
-# =========================================================
-# START
-# =========================================================
-
-print("=" * 60)
-print("ETF AUTO SCHEDULER STARTED")
-print("Waiting for scheduled time...")
-print("=" * 60)
-
-# =========================================================
-# LOOP FOREVER
-# =========================================================
-
-while True:
-
-    schedule.run_pending()
-
-    time.sleep(30)
+      - name: Run ETF Script
+        run: |
+          python etf_downloader.py
