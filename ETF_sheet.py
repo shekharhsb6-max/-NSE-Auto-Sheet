@@ -140,9 +140,7 @@ def fetch_delivery(date_obj):
             for c in df.columns
         ]
 
-        print(
-            "\nDELIVERY COLUMNS:"
-        )
+        print("\nDELIVERY COLUMNS:")
 
         print(df.columns.tolist())
 
@@ -161,7 +159,7 @@ def fetch_delivery(date_obj):
                 )
 
         # =================================================
-        # VALIDATE
+        # REQUIRED COLUMNS
         # =================================================
 
         required_cols = [
@@ -195,7 +193,7 @@ def fetch_delivery(date_obj):
         )
 
         # =================================================
-        # NUMERIC
+        # NUMERIC CONVERSION
         # =================================================
 
         df['DELIV_QTY'] = pd.to_numeric(
@@ -209,7 +207,7 @@ def fetch_delivery(date_obj):
         )
 
         # =================================================
-        # FINAL DELIVERY DF
+        # FINAL DELIVERY DATAFRAME
         # =================================================
 
         delivery_df = df[[
@@ -291,7 +289,7 @@ def fetch_bhavcopy(date_obj):
                 df = pd.read_csv(f)
 
         # =================================================
-        # CLEAN COLUMNS
+        # CLEAN COLUMN NAMES
         # =================================================
 
         df.columns = [
@@ -303,12 +301,8 @@ def fetch_bhavcopy(date_obj):
 
         print(df.columns.tolist())
 
-        print("\nBHAVCOPY SAMPLE:")
-
-        print(df.head())
-
         # =================================================
-        # COLUMN MAP
+        # DYNAMIC COLUMN DETECTION
         # =================================================
 
         symbol_col = None
@@ -321,16 +315,12 @@ def fetch_bhavcopy(date_obj):
 
             lc = c.lower()
 
-            # SYMBOL
-
             if (
                 'symbol' in lc
                 or 'tckrsymb' in lc
             ):
 
                 symbol_col = c
-
-            # SERIES
 
             elif (
                 'series' in lc
@@ -339,16 +329,12 @@ def fetch_bhavcopy(date_obj):
 
                 series_col = c
 
-            # CLOSE
-
             elif (
                 'close' in lc
                 or 'clspric' in lc
             ):
 
                 close_col = c
-
-            # TURNOVER
 
             elif (
                 'turnover' in lc
@@ -357,8 +343,6 @@ def fetch_bhavcopy(date_obj):
             ):
 
                 turnover_col = c
-
-            # VOLUME
 
             elif (
                 'volume' in lc
@@ -378,24 +362,20 @@ def fetch_bhavcopy(date_obj):
         )
 
         # =================================================
-        # VALIDATE
+        # VALIDATION
         # =================================================
 
-        required = [
-            symbol_col,
-            close_col,
-            turnover_col
-        ]
+        if not symbol_col:
 
-        for col in required:
+            return None
 
-            if col is None:
+        if not close_col:
 
-                print(
-                    "Required column missing"
-                )
+            return None
 
-                return None
+        if not turnover_col:
+
+            return None
 
         # =================================================
         # EQ ONLY
@@ -436,7 +416,7 @@ def fetch_bhavcopy(date_obj):
             )
 
         # =================================================
-        # DROP EMPTY
+        # DROP EMPTY ROWS
         # =================================================
 
         df = df.dropna(
@@ -465,7 +445,7 @@ def fetch_bhavcopy(date_obj):
         )
 
         # =================================================
-        # FETCH DELIVERY
+        # FETCH DELIVERY DATA
         # =================================================
 
         delivery_df = fetch_delivery(
@@ -508,31 +488,19 @@ def fetch_bhavcopy(date_obj):
 
         final_df = pd.DataFrame()
 
-        final_df['SYMBOL'] = (
-            df[symbol_col]
-        )
+        final_df['SYMBOL'] = df[symbol_col]
 
-        final_df['TURNOVER'] = (
-            df[turnover_col]
-        )
+        final_df['TURNOVER'] = df[turnover_col]
 
-        final_df['CLOSE_PRICE'] = (
-            df[close_col]
-        )
-
-        # VOLUME
+        final_df['CLOSE_PRICE'] = df[close_col]
 
         if volume_col:
 
-            final_df['VOLUME'] = (
-                df[volume_col]
-            )
+            final_df['VOLUME'] = df[volume_col]
 
         else:
 
             final_df['VOLUME'] = ""
-
-        # DELIVERY QTY
 
         if 'DELIVERY_QTY' in df.columns:
 
@@ -543,8 +511,6 @@ def fetch_bhavcopy(date_obj):
         else:
 
             final_df['DELIVERY_QTY'] = ""
-
-        # DELIVERY %
 
         if 'DELIVERY_PERCENT' in df.columns:
 
@@ -564,6 +530,12 @@ def fetch_bhavcopy(date_obj):
             subset=['SYMBOL']
         )
 
+        # =================================================
+        # REPLACE NaN
+        # =================================================
+
+        final_df = final_df.fillna("")
+
         print("\nFINAL SHAPE:")
 
         print(final_df.shape)
@@ -576,7 +548,38 @@ def fetch_bhavcopy(date_obj):
 
             return None
 
-        return final_df.values.tolist()
+        # =================================================
+        # CONVERT TO PURE PYTHON TYPES
+        # =================================================
+
+        clean_data = []
+
+        for row in final_df.values.tolist():
+
+            clean_row = []
+
+            for val in row:
+
+                if pd.isna(val):
+
+                    clean_row.append("")
+
+                elif hasattr(val, 'item'):
+
+                    clean_row.append(val.item())
+
+                else:
+
+                    clean_row.append(val)
+
+            clean_data.append(clean_row)
+
+        print(
+            "\nTOTAL CLEAN ROWS:",
+            len(clean_data)
+        )
+
+        return clean_data
 
     except Exception as e:
 
@@ -666,18 +669,10 @@ if (
         )
 
         # =================================================
-        # CLEAR OLD DATA ONLY AFTER VALID DATA
+        # PREPARE FINAL SHEET DATA
         # =================================================
 
-        worksheet.batch_clear([
-            'A2:F5000'
-        ])
-
-        # =================================================
-        # HEADERS
-        # =================================================
-
-        headers = [[
+        all_data = [[
             "SYMBOL",
             "TURNOVER",
             "CLOSE_PRICE",
@@ -686,22 +681,25 @@ if (
             "DELIVERY_PERCENT"
         ]]
 
+        all_data.extend(data_to_insert)
+
+        # =================================================
+        # CLEAR ENTIRE SHEET
+        # =================================================
+
+        worksheet.clear()
+
+        # =================================================
+        # UPLOAD ALL DATA
+        # =================================================
+
         worksheet.update(
-            'A1',
-            headers
+            range_name='A1',
+            values=all_data
         )
 
         # =================================================
-        # UPLOAD DATA
-        # =================================================
-
-        worksheet.update(
-            'A2',
-            data_to_insert
-        )
-
-        # =================================================
-        # STATUS
+        # STATUS MESSAGE
         # =================================================
 
         ist_now = (
@@ -715,8 +713,8 @@ if (
         )
 
         worksheet.update(
-            'H2',
-            [[status_msg]]
+            range_name='H2',
+            values=[[status_msg]]
         )
 
         print(
