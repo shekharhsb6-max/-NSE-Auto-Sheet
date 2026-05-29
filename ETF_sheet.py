@@ -46,7 +46,7 @@ worksheet = client.open_by_key(
 ).worksheet("RAW_DATA")
 
 # =========================================================
-# NSE SESSION
+# CREATE NSE SESSION
 # =========================================================
 
 def get_session():
@@ -127,8 +127,13 @@ def fetch_delivery(date_obj):
 
         from io import StringIO
 
+        # =================================================
+        # READ DELIVERY FILE
+        # =================================================
+
         df = pd.read_csv(
-            StringIO(response.text)
+            StringIO(response.text),
+            skipinitialspace=True
         )
 
         # =================================================
@@ -136,7 +141,7 @@ def fetch_delivery(date_obj):
         # =================================================
 
         df.columns = [
-            str(c).strip()
+            str(c).strip().upper()
             for c in df.columns
         ]
 
@@ -145,7 +150,7 @@ def fetch_delivery(date_obj):
         print(df.columns.tolist())
 
         # =================================================
-        # CLEAN STRINGS
+        # CLEAN STRING VALUES
         # =================================================
 
         for col in df.columns:
@@ -159,32 +164,71 @@ def fetch_delivery(date_obj):
                 )
 
         # =================================================
-        # REQUIRED COLUMNS
+        # COLUMN DETECTION
         # =================================================
 
-        required_cols = [
-            'SYMBOL',
-            'SERIES',
-            'DELIV_QTY',
-            'DELIV_PER'
-        ]
+        symbol_col = None
+        series_col = None
+        qty_col = None
+        per_col = None
 
-        for col in required_cols:
+        for c in df.columns:
 
-            if col not in df.columns:
+            uc = c.upper()
 
-                print(
-                    f"Missing Delivery Column: {col}"
-                )
+            if uc == 'SYMBOL':
 
-                return None
+                symbol_col = c
+
+            elif uc == 'SERIES':
+
+                series_col = c
+
+            elif 'DELIV_QTY' in uc:
+
+                qty_col = c
+
+            elif 'DELIV_PER' in uc:
+
+                per_col = c
+
+        print("\nDELIVERY COLUMN MAP:")
+
+        print(
+            symbol_col,
+            series_col,
+            qty_col,
+            per_col
+        )
+
+        # =================================================
+        # VALIDATION
+        # =================================================
+
+        if not symbol_col:
+
+            return None
+
+        if not series_col:
+
+            return None
+
+        if not qty_col:
+
+            return None
+
+        if not per_col:
+
+            return None
 
         # =================================================
         # EQ ONLY
         # =================================================
 
         df = df[
-            df['SERIES'] == 'EQ'
+            df[series_col]
+            .astype(str)
+            .str.strip() == 'EQ'
         ]
 
         print(
@@ -196,13 +240,13 @@ def fetch_delivery(date_obj):
         # NUMERIC CONVERSION
         # =================================================
 
-        df['DELIV_QTY'] = pd.to_numeric(
-            df['DELIV_QTY'],
+        df[qty_col] = pd.to_numeric(
+            df[qty_col],
             errors='coerce'
         )
 
-        df['DELIV_PER'] = pd.to_numeric(
-            df['DELIV_PER'],
+        df[per_col] = pd.to_numeric(
+            df[per_col],
             errors='coerce'
         )
 
@@ -210,20 +254,28 @@ def fetch_delivery(date_obj):
         # FINAL DELIVERY DATAFRAME
         # =================================================
 
-        delivery_df = df[[
-            'SYMBOL',
-            'DELIV_QTY',
-            'DELIV_PER'
-        ]].copy()
+        delivery_df = pd.DataFrame()
 
-        delivery_df.columns = [
-            'SYMBOL',
-            'DELIVERY_QTY',
-            'DELIVERY_PERCENT'
-        ]
+        delivery_df['SYMBOL'] = (
+            df[symbol_col]
+            .astype(str)
+            .str.strip()
+        )
+
+        delivery_df['DELIVERY_QTY'] = (
+            df[qty_col]
+        )
+
+        delivery_df['DELIVERY_PERCENT'] = (
+            df[per_col]
+        )
+
+        print("\nDELIVERY SAMPLE:")
+
+        print(delivery_df.head())
 
         print(
-            "Delivery Final Rows:",
+            "\nDELIVERY ROWS:",
             len(delivery_df)
         )
 
@@ -302,7 +354,7 @@ def fetch_bhavcopy(date_obj):
         print(df.columns.tolist())
 
         # =================================================
-        # DYNAMIC COLUMN DETECTION
+        # COLUMN DETECTION
         # =================================================
 
         symbol_col = None
@@ -416,7 +468,7 @@ def fetch_bhavcopy(date_obj):
             )
 
         # =================================================
-        # DROP EMPTY ROWS
+        # DROP EMPTY
         # =================================================
 
         df = df.dropna(
@@ -453,7 +505,7 @@ def fetch_bhavcopy(date_obj):
         )
 
         # =================================================
-        # MERGE DELIVERY
+        # MERGE DELIVERY DATA
         # =================================================
 
         if delivery_df is not None:
@@ -488,19 +540,31 @@ def fetch_bhavcopy(date_obj):
 
         final_df = pd.DataFrame()
 
-        final_df['SYMBOL'] = df[symbol_col]
+        final_df['SYMBOL'] = (
+            df[symbol_col]
+        )
 
-        final_df['TURNOVER'] = df[turnover_col]
+        final_df['TURNOVER'] = (
+            df[turnover_col]
+        )
 
-        final_df['CLOSE_PRICE'] = df[close_col]
+        final_df['CLOSE_PRICE'] = (
+            df[close_col]
+        )
+
+        # VOLUME
 
         if volume_col:
 
-            final_df['VOLUME'] = df[volume_col]
+            final_df['VOLUME'] = (
+                df[volume_col]
+            )
 
         else:
 
             final_df['VOLUME'] = ""
+
+        # DELIVERY QTY
 
         if 'DELIVERY_QTY' in df.columns:
 
@@ -511,6 +575,8 @@ def fetch_bhavcopy(date_obj):
         else:
 
             final_df['DELIVERY_QTY'] = ""
+
+        # DELIVERY %
 
         if 'DELIVERY_PERCENT' in df.columns:
 
@@ -684,13 +750,13 @@ if (
         all_data.extend(data_to_insert)
 
         # =================================================
-        # CLEAR ENTIRE SHEET
+        # CLEAR SHEET
         # =================================================
 
         worksheet.clear()
 
         # =================================================
-        # UPLOAD ALL DATA
+        # UPLOAD DATA
         # =================================================
 
         worksheet.update(
