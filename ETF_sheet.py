@@ -10,16 +10,16 @@ from datetime import datetime, timedelta
 import os
 import json
 
-# =========================================================
+# =====================================================
 # GOOGLE SHEETS AUTH
-# =========================================================
+# =====================================================
 
 creds_json = os.environ.get('GCP_CREDENTIALS')
 
 if not creds_json:
 
-    print("CRITICAL: GCP_CREDENTIALS secret missing!")
-    exit(1)
+    print("GCP_CREDENTIALS missing")
+    exit()
 
 creds_dict = json.loads(creds_json)
 
@@ -35,9 +35,9 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 
 client = gspread.authorize(creds)
 
-# =========================================================
-# GOOGLE SHEET DETAILS
-# =========================================================
+# =====================================================
+# SHEET
+# =====================================================
 
 spreadsheet_id = "1D3E5lyH2QUq55AzsJqSbJj2tNkmOQht_8xUmt0mdvbk"
 
@@ -45,35 +45,26 @@ worksheet = client.open_by_key(
     spreadsheet_id
 ).worksheet("RAW_DATA")
 
-# =========================================================
-# COMMON NSE SESSION
-# =========================================================
+# =====================================================
+# NSE SESSION
+# =====================================================
 
-def create_nse_session():
+def get_session():
 
-    session = requests.Session()
+    s = requests.Session()
 
-    session.headers.update({
+    s.headers.update({
 
-        'User-Agent': (
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/120.0 Safari/537.36'
-        ),
+        "User-Agent":
+        "Mozilla/5.0",
 
-        'Accept': (
-            'text/html,application/xhtml+xml,'
-            'application/xml;q=0.9,*/*;q=0.8'
-        ),
-
-        'Accept-Language': 'en-US,en;q=0.9',
-
-        'Referer': 'https://www.nseindia.com/'
+        "Referer":
+        "https://www.nseindia.com/"
     })
 
     try:
 
-        session.get(
+        s.get(
             "https://www.nseindia.com",
             timeout=10
         )
@@ -81,444 +72,404 @@ def create_nse_session():
     except:
         pass
 
-    return session
+    return s
 
-# =========================================================
-# NSE DELIVERY DATA FETCHER
-# =========================================================
+# =====================================================
+# FETCH DELIVERY DATA
+# =====================================================
 
-def fetch_delivery_data(date_obj):
-
-    date_str = date_obj.strftime("%d%m%Y")
-
-    url = (
-        f"https://archives.nseindia.com/products/content/"
-        f"sec_bhavdata_full_{date_str}.csv"
-    )
-
-    session = create_nse_session()
+def fetch_delivery(date_obj):
 
     try:
 
-        response = session.get(
-            url,
-            timeout=30
+        session = get_session()
+
+        date_str = date_obj.strftime("%d%m%Y")
+
+        url = (
+            "https://archives.nseindia.com/products/content/"
+            f"sec_bhavdata_full_{date_str}.csv"
         )
 
-        print(f"Delivery URL: {url}")
-        print(f"Delivery Status: {response.status_code}")
+        r = session.get(url, timeout=30)
 
-        if response.status_code == 200:
+        print("Delivery:", r.status_code)
 
-            from io import StringIO
+        if r.status_code != 200:
 
-            df = pd.read_csv(
-                StringIO(response.text)
-            )
+            return None
 
-            # =====================================
-            # CLEAN COLUMN NAMES
-            # =====================================
+        from io import StringIO
 
-            df.columns = [
-                c.strip()
-                for c in df.columns
-            ]
+        df = pd.read_csv(
+            StringIO(r.text)
+        )
 
-            # =====================================
-            # CLEAN STRING VALUES
-            # =====================================
+        # CLEAN COLUMNS
 
-            for col in df.columns:
+        df.columns = [
+            c.strip()
+            for c in df.columns
+        ]
 
-                if df[col].dtype == "object":
+        # CLEAN VALUES
 
-                    df[col] = (
-                        df[col]
-                        .astype(str)
-                        .str.strip()
-                    )
+        for col in df.columns:
 
-            # =====================================
-            # COLUMN VALIDATION
-            # =====================================
+            if df[col].dtype == object:
 
-            required_cols = [
-                'SYMBOL',
-                'SERIES',
-                'DELIV_QTY',
-                'DELIV_PER'
-            ]
-
-            missing_cols = [
-                c for c in required_cols
-                if c not in df.columns
-            ]
-
-            if missing_cols:
-
-                print(
-                    f"Missing Delivery Columns: "
-                    f"{missing_cols}"
+                df[col] = (
+                    df[col]
+                    .astype(str)
+                    .str.strip()
                 )
 
+        print(df.columns.tolist())
+
+        # REQUIRED COLUMNS
+
+        needed = [
+            'SYMBOL',
+            'SERIES',
+            'DELIV_QTY',
+            'DELIV_PER'
+        ]
+
+        for n in needed:
+
+            if n not in df.columns:
+
+                print(f"Missing {n}")
                 return None
 
-            # =====================================
-            # EQ ONLY
-            # =====================================
+        # EQ ONLY
+
+        df = df[
+            df['SERIES'] == 'EQ'
+        ]
+
+        # FINAL
+
+        df = df[[
+            'SYMBOL',
+            'DELIV_QTY',
+            'DELIV_PER'
+        ]]
+
+        df.columns = [
+            'SYMBOL',
+            'DELIVERY_QTY',
+            'DELIVERY_PERCENT'
+        ]
+
+        return df
+
+    except Exception as e:
+
+        print("Delivery Error:", e)
+
+        return None
+
+# =====================================================
+# FETCH BHAVCOPY
+# =====================================================
+
+def fetch_bhavcopy(date_obj):
+
+    try:
+
+        session = get_session()
+
+        date_str = date_obj.strftime("%Y%m%d")
+
+        url = (
+            "https://nsearchives.nseindia.com/content/cm/"
+            f"BhavCopy_NSE_CM_0_0_0_{date_str}_F_0000.csv.zip"
+        )
+
+        r = session.get(url, timeout=30)
+
+        print("Bhavcopy:", r.status_code)
+
+        if r.status_code != 200:
+
+            return None
+
+        with zipfile.ZipFile(
+            io.BytesIO(r.content)
+        ) as z:
+
+            fname = z.namelist()[0]
+
+            with z.open(fname) as f:
+
+                df = pd.read_csv(f)
+
+        # CLEAN COLUMN NAMES
+
+        df.columns = [
+            c.strip()
+            for c in df.columns
+        ]
+
+        print(df.columns.tolist())
+
+        # DYNAMIC COLUMN DETECTION
+
+        symbol_col = None
+        close_col = None
+        turnover_col = None
+        volume_col = None
+        series_col = None
+
+        for c in df.columns:
+
+            lc = c.lower()
+
+            if (
+                'symbol' in lc
+                or 'tckrsymb' in lc
+            ):
+                symbol_col = c
+
+            elif (
+                'close' in lc
+                or 'clspric' in lc
+            ):
+                close_col = c
+
+            elif (
+                'turnover' in lc
+                or 'ttltrfval' in lc
+                or 'ttltrdval' in lc
+            ):
+                turnover_col = c
+
+            elif (
+                'volume' in lc
+                or 'ttltradgvol' in lc
+            ):
+                volume_col = c
+
+            elif (
+                'series' in lc
+                or 'sctysrs' in lc
+            ):
+                series_col = c
+
+        print(
+            symbol_col,
+            close_col,
+            turnover_col,
+            volume_col,
+            series_col
+        )
+
+        # VALIDATION
+
+        if not symbol_col:
+
+            return None
+
+        if not turnover_col:
+
+            return None
+
+        if not close_col:
+
+            return None
+
+        # EQ FILTER
+
+        if series_col:
 
             df = df[
-                df['SERIES'] == 'EQ'
+                df[series_col]
+                .astype(str)
+                .str.strip() == 'EQ'
             ]
 
-            # =====================================
-            # NUMERIC CONVERSION
-            # =====================================
+        # NUMERIC
 
-            df['DELIV_QTY'] = pd.to_numeric(
-                df['DELIV_QTY'],
+        df[turnover_col] = pd.to_numeric(
+            df[turnover_col],
+            errors='coerce'
+        )
+
+        df[close_col] = pd.to_numeric(
+            df[close_col],
+            errors='coerce'
+        )
+
+        if volume_col:
+
+            df[volume_col] = pd.to_numeric(
+                df[volume_col],
                 errors='coerce'
             )
 
-            df['DELIV_PER'] = pd.to_numeric(
-                df['DELIV_PER'],
-                errors='coerce'
+        # REMOVE EMPTY
+
+        df = df.dropna(
+            subset=[
+                turnover_col,
+                close_col
+            ]
+        )
+
+        # SORT
+
+        df = df.sort_values(
+            by=turnover_col,
+            ascending=False
+        )
+
+        # FETCH DELIVERY
+
+        delivery_df = fetch_delivery(date_obj)
+
+        # MERGE
+
+        if delivery_df is not None:
+
+            df[symbol_col] = (
+                df[symbol_col]
+                .astype(str)
+                .str.strip()
             )
 
-            # =====================================
-            # FINAL DELIVERY DATAFRAME
-            # =====================================
+            delivery_df['SYMBOL'] = (
+                delivery_df['SYMBOL']
+                .astype(str)
+                .str.strip()
+            )
 
-            delivery_df = df[[
-                'SYMBOL',
-                'DELIV_QTY',
-                'DELIV_PER'
-            ]].copy()
+            df = df.merge(
+                delivery_df,
+                left_on=symbol_col,
+                right_on='SYMBOL',
+                how='left'
+            )
 
-            delivery_df.columns = [
-                'SYMBOL',
-                'DELIVERY_QTY',
+        # FINAL OUTPUT
+
+        final = pd.DataFrame()
+
+        final['SYMBOL'] = df[symbol_col]
+
+        final['TURNOVER'] = df[turnover_col]
+
+        final['CLOSE_PRICE'] = df[close_col]
+
+        if volume_col:
+
+            final['VOLUME'] = df[volume_col]
+
+        else:
+
+            final['VOLUME'] = ""
+
+        if 'DELIVERY_QTY' in df.columns:
+
+            final['DELIVERY_QTY'] = df[
+                'DELIVERY_QTY'
+            ]
+
+        else:
+
+            final['DELIVERY_QTY'] = ""
+
+        if 'DELIVERY_PERCENT' in df.columns:
+
+            final['DELIVERY_PERCENT'] = df[
                 'DELIVERY_PERCENT'
             ]
 
-            return delivery_df
+        else:
 
-        return None
+            final['DELIVERY_PERCENT'] = ""
 
-    except Exception as e:
+        # REMOVE EMPTY SYMBOLS
 
-        print(f"Delivery Error: {str(e)}")
-
-        return None
-
-# =========================================================
-# NSE BHAVCOPY FETCHER
-# =========================================================
-
-def fetch_bhavcopy_for_date(date_obj):
-
-    date_str = date_obj.strftime("%Y%m%d")
-
-    url = (
-        f"https://nsearchives.nseindia.com/content/cm/"
-        f"BhavCopy_NSE_CM_0_0_0_{date_str}_F_0000.csv.zip"
-    )
-
-    session = create_nse_session()
-
-    try:
-
-        # =================================================
-        # DOWNLOAD BHAVCOPY
-        # =================================================
-
-        response = session.get(
-            url,
-            timeout=30
+        final = final.dropna(
+            subset=['SYMBOL']
         )
 
-        print(f"Trying Date: {date_str}")
-        print(f"Bhavcopy Status: {response.status_code}")
+        print(final.head())
 
-        if response.status_code == 200:
+        print(final.shape)
 
-            with zipfile.ZipFile(
-                io.BytesIO(response.content)
-            ) as z:
+        if len(final) == 0:
 
-                csv_filename = z.namelist()[0]
+            return None
 
-                with z.open(csv_filename) as f:
-
-                    df = pd.read_csv(f)
-
-                    # =====================================
-                    # FETCH DELIVERY DATA
-                    # =====================================
-
-                    delivery_df = fetch_delivery_data(
-                        date_obj
-                    )
-
-                    # =====================================
-                    # CLEAN COLUMN NAMES
-                    # =====================================
-
-                    df.columns = [
-                        c.strip()
-                        for c in df.columns
-                    ]
-
-                    # =====================================
-                    # COLUMN DETECTION
-                    # =====================================
-
-                    sym_col = next(
-                        (
-                            c for c in [
-                                'TckrSymb',
-                                'SYMBOL'
-                            ]
-                            if c in df.columns
-                        ),
-                        None
-                    )
-
-                    close_col = next(
-                        (
-                            c for c in [
-                                'ClsPric',
-                                'CLOSE_PRICE',
-                                'CLOSE'
-                            ]
-                            if c in df.columns
-                        ),
-                        None
-                    )
-
-                    series_col = next(
-                        (
-                            c for c in [
-                                'SctySrs',
-                                'SERIES'
-                            ]
-                            if c in df.columns
-                        ),
-                        None
-                    )
-
-                    turnover_col = next(
-                        (
-                            c for c in [
-                                'TtlTrfVal',
-                                'TtlTrdVal',
-                                'TURNOVER_LACS',
-                                'TURNOVER'
-                            ]
-                            if c in df.columns
-                        ),
-                        None
-                    )
-
-                    volume_col = next(
-                        (
-                            c for c in [
-                                'TtlTradgVol',
-                                'TTL_TRD_QNTY',
-                                'VOLUME'
-                            ]
-                            if c in df.columns
-                        ),
-                        None
-                    )
-
-                    # =====================================
-                    # VALIDATION
-                    # =====================================
-
-                    if not all([
-                        sym_col,
-                        turnover_col,
-                        close_col
-                    ]):
-
-                        print(
-                            "Required Bhavcopy "
-                            "columns missing."
-                        )
-
-                        return None
-
-                    # =====================================
-                    # EQ ONLY
-                    # =====================================
-
-                    if series_col:
-
-                        df = df[
-                            df[series_col]
-                            .astype(str)
-                            .str.strip() == 'EQ'
-                        ]
-
-                    # =====================================
-                    # NUMERIC CONVERSION
-                    # =====================================
-
-                    df[turnover_col] = pd.to_numeric(
-                        df[turnover_col],
-                        errors='coerce'
-                    )
-
-                    if volume_col:
-
-                        df[volume_col] = pd.to_numeric(
-                            df[volume_col],
-                            errors='coerce'
-                        )
-
-                    # =====================================
-                    # REMOVE EMPTY TURNOVER
-                    # =====================================
-
-                    df = df.dropna(
-                        subset=[turnover_col]
-                    )
-
-                    # =====================================
-                    # SORT BY TURNOVER
-                    # =====================================
-
-                    df = df.sort_values(
-                        by=turnover_col,
-                        ascending=False
-                    )
-
-                    # =====================================
-                    # MERGE DELIVERY DATA
-                    # =====================================
-
-                    if delivery_df is not None:
-
-                        df = df.merge(
-                            delivery_df,
-                            left_on=sym_col,
-                            right_on='SYMBOL',
-                            how='left'
-                        )
-
-                    # =====================================
-                    # FINAL COLUMNS
-                    # =====================================
-
-                    final_cols = [
-                        sym_col,
-                        turnover_col,
-                        close_col
-                    ]
-
-                    if volume_col:
-
-                        final_cols.append(
-                            volume_col
-                        )
-
-                    if 'DELIVERY_QTY' in df.columns:
-
-                        final_cols.append(
-                            'DELIVERY_QTY'
-                        )
-
-                    if 'DELIVERY_PERCENT' in df.columns:
-
-                        final_cols.append(
-                            'DELIVERY_PERCENT'
-                        )
-
-                    # =====================================
-                    # FINAL DATAFRAME
-                    # =====================================
-
-                    final_df = df[
-                        final_cols
-                    ].copy()
-
-                    # =====================================
-                    # ROUND DELIVERY %
-                    # =====================================
-
-                    if 'DELIVERY_PERCENT' in final_df.columns:
-
-                        final_df['DELIVERY_PERCENT'] = (
-                            final_df[
-                                'DELIVERY_PERCENT'
-                            ].round(2)
-                        )
-
-                    return final_df.values.tolist()
-
-        return None
+        return final.values.tolist()
 
     except Exception as e:
 
-        print(f"Bhavcopy Error: {str(e)}")
+        print("Bhavcopy Error:", e)
 
         return None
 
-# =========================================================
-# EXECUTION LOGIC
-# =========================================================
-
-date = datetime.now()
+# =====================================================
+# FIND LATEST VALID DATA
+# =====================================================
 
 data_to_insert = None
 
-fetched_date_str = ""
+fetched_date = ""
+
+today = datetime.now()
 
 for i in range(7):
 
-    test_date = date - timedelta(days=i)
+    d = today - timedelta(days=i)
 
-    # =============================================
-    # SKIP WEEKENDS
-    # =============================================
+    # SKIP WEEKEND
 
-    if test_date.weekday() >= 5:
+    if d.weekday() >= 5:
 
         continue
 
-    data_to_insert = fetch_bhavcopy_for_date(
-        test_date
+    print(
+        "\nTrying:",
+        d.strftime("%d-%b-%Y")
     )
 
-    if data_to_insert:
+    temp = fetch_bhavcopy(d)
 
-        fetched_date_str = test_date.strftime(
-            '%d-%b-%Y'
+    if temp and len(temp) > 0:
+
+        data_to_insert = temp
+
+        fetched_date = d.strftime(
+            "%d-%b-%Y"
         )
+
+        print("SUCCESS")
 
         break
 
-# =========================================================
-# UPDATE GOOGLE SHEET
-# =========================================================
+# =====================================================
+# UPDATE SHEET
+# =====================================================
 
 if data_to_insert:
 
     try:
 
-        # =============================================
+        print(
+            "Uploading Rows:",
+            len(data_to_insert)
+        )
+
         # CLEAR OLD DATA
-        # =============================================
 
         worksheet.batch_clear([
             'A2:F5000'
         ])
 
-        # =============================================
         # HEADERS
-        # =============================================
 
         headers = [[
             "SYMBOL",
@@ -534,48 +485,39 @@ if data_to_insert:
             headers
         )
 
-        # =============================================
-        # UPLOAD DATA
-        # =============================================
+        # UPLOAD
 
         worksheet.update(
             'A2',
             data_to_insert
         )
 
-        # =============================================
-        # STATUS MESSAGE
-        # =============================================
+        # STATUS
 
         ist_now = (
             datetime.utcnow() +
             timedelta(hours=5, minutes=30)
         ).strftime('%d-%b %H:%M')
 
-        status_msg = (
-            f"Bhavcopy Date: {fetched_date_str} | "
+        status = (
+            f"Bhavcopy Date: {fetched_date} | "
             f"Updated: {ist_now} IST"
         )
 
         worksheet.update(
             'H2',
-            [[status_msg]]
+            [[status]]
         )
 
-        print(
-            f"SUCCESS: RAW_DATA Updated "
-            f"for {fetched_date_str}"
-        )
+        print("DONE")
 
     except Exception as e:
 
-        print(
-            f"Google Sheet Error: {str(e)}"
-        )
+        print("Sheet Error:", e)
 
 else:
 
     print(
-        "FAILED: No Bhavcopy found "
-        "in last 7 trading days."
+        "NO VALID DATA FOUND. "
+        "OLD DATA RETAINED."
     )
