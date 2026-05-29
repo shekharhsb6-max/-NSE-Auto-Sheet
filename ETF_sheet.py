@@ -128,11 +128,20 @@ def fetch_delivery(date_obj):
         from io import StringIO
 
         # =================================================
-        # READ DELIVERY FILE
+        # RAW TEXT
+        # =================================================
+
+        raw_text = response.text
+
+        print("\nDELIVERY FILE SAMPLE:")
+        print(raw_text[:500])
+
+        # =================================================
+        # READ CSV
         # =================================================
 
         df = pd.read_csv(
-            StringIO(response.text),
+            StringIO(raw_text),
             skipinitialspace=True
         )
 
@@ -140,13 +149,23 @@ def fetch_delivery(date_obj):
         # CLEAN COLUMN NAMES
         # =================================================
 
-        df.columns = [
-            str(c).strip().upper()
-            for c in df.columns
-        ]
+        cleaned_cols = []
 
-        print("\nDELIVERY COLUMNS:")
+        for c in df.columns:
 
+            clean_col = (
+                str(c)
+                .replace('\ufeff', '')
+                .replace('"', '')
+                .strip()
+                .upper()
+            )
+
+            cleaned_cols.append(clean_col)
+
+        df.columns = cleaned_cols
+
+        print("\nCLEANED DELIVERY COLUMNS:")
         print(df.columns.tolist())
 
         # =================================================
@@ -164,7 +183,7 @@ def fetch_delivery(date_obj):
                 )
 
         # =================================================
-        # COLUMN DETECTION
+        # AUTO COLUMN DETECTION
         # =================================================
 
         symbol_col = None
@@ -176,29 +195,43 @@ def fetch_delivery(date_obj):
 
             uc = c.upper()
 
-            if uc == 'SYMBOL':
+            # SYMBOL
+
+            if 'SYMBOL' in uc:
 
                 symbol_col = c
 
-            elif uc == 'SERIES':
+            # SERIES
+
+            elif 'SERIES' in uc:
 
                 series_col = c
 
-            elif 'DELIV_QTY' in uc:
+            # DELIVERY QTY
+
+            elif (
+                'DELIV_QTY' in uc
+                or 'DELIVERY QTY' in uc
+            ):
 
                 qty_col = c
 
-            elif 'DELIV_PER' in uc:
+            # DELIVERY %
+
+            elif (
+                'DELIV_PER' in uc
+                or 'DELIVERY %' in uc
+            ):
 
                 per_col = c
 
         print("\nDELIVERY COLUMN MAP:")
 
         print(
-            symbol_col,
-            series_col,
-            qty_col,
-            per_col
+            "SYMBOL:", symbol_col,
+            "| SERIES:", series_col,
+            "| QTY:", qty_col,
+            "| %:", per_col
         )
 
         # =================================================
@@ -207,32 +240,37 @@ def fetch_delivery(date_obj):
 
         if not symbol_col:
 
+            print("Missing SYMBOL column")
             return None
 
         if not series_col:
 
+            print("Missing SERIES column")
             return None
 
         if not qty_col:
 
+            print("Missing DELIV_QTY column")
             return None
 
         if not per_col:
 
+            print("Missing DELIV_PER column")
             return None
 
         # =================================================
-        # EQ ONLY
+        # EQ FILTER
         # =================================================
 
         df = df[
             df[series_col]
             .astype(str)
-            .str.strip() == 'EQ'
+            .str.strip()
+            == 'EQ'
         ]
 
         print(
-            "Delivery EQ Rows:",
+            "Rows After EQ Filter:",
             len(df)
         )
 
@@ -270,12 +308,19 @@ def fetch_delivery(date_obj):
             df[per_col]
         )
 
-        print("\nDELIVERY SAMPLE:")
+        # =================================================
+        # REMOVE EMPTY SYMBOLS
+        # =================================================
 
+        delivery_df = delivery_df.dropna(
+            subset=['SYMBOL']
+        )
+
+        print("\nDELIVERY SAMPLE:")
         print(delivery_df.head())
 
         print(
-            "\nDELIVERY ROWS:",
+            "\nDELIVERY FINAL ROWS:",
             len(delivery_df)
         )
 
@@ -283,7 +328,8 @@ def fetch_delivery(date_obj):
 
     except Exception as e:
 
-        print("Delivery Error:", str(e))
+        print("\nDELIVERY ERROR:")
+        print(str(e))
 
         return None
 
@@ -350,7 +396,6 @@ def fetch_bhavcopy(date_obj):
         ]
 
         print("\nBHAVCOPY COLUMNS:")
-
         print(df.columns.tolist())
 
         # =================================================
@@ -497,6 +542,17 @@ def fetch_bhavcopy(date_obj):
         )
 
         # =================================================
+        # CLEAN SYMBOLS
+        # =================================================
+
+        df[symbol_col] = (
+            df[symbol_col]
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+
+        # =================================================
         # FETCH DELIVERY DATA
         # =================================================
 
@@ -510,16 +566,11 @@ def fetch_bhavcopy(date_obj):
 
         if delivery_df is not None:
 
-            df[symbol_col] = (
-                df[symbol_col]
-                .astype(str)
-                .str.strip()
-            )
-
             delivery_df['SYMBOL'] = (
                 delivery_df['SYMBOL']
                 .astype(str)
                 .str.strip()
+                .str.upper()
             )
 
             df = df.merge(
@@ -532,6 +583,12 @@ def fetch_bhavcopy(date_obj):
             print(
                 "Rows After Delivery Merge:",
                 len(df)
+            )
+
+        else:
+
+            print(
+                "Delivery Data Not Available"
             )
 
         # =================================================
@@ -603,11 +660,9 @@ def fetch_bhavcopy(date_obj):
         final_df = final_df.fillna("")
 
         print("\nFINAL SHAPE:")
-
         print(final_df.shape)
 
         print("\nFINAL SAMPLE:")
-
         print(final_df.head())
 
         if len(final_df) == 0:
@@ -650,7 +705,6 @@ def fetch_bhavcopy(date_obj):
     except Exception as e:
 
         print("\nBHAVCOPY ERROR:")
-
         print(str(e))
 
         return None
