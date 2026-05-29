@@ -1,22 +1,25 @@
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+
 import pandas as pd
 import requests
 import zipfile
 import io
-from datetime import datetime, timedelta, timezone
+
+from datetime import datetime, timedelta
 import os
 import json
-import traceback
 
-# ==========================================
-# 1. GOOGLE SHEETS AUTHENTICATION
-# ==========================================
+# =========================================================
+# GOOGLE SHEETS AUTH
+# =========================================================
 
 creds_json = os.environ.get('GCP_CREDENTIALS')
 
 if not creds_json:
-    raise Exception("CRITICAL: GCP_CREDENTIALS secret missing!")
+
+    print("CRITICAL: GCP_CREDENTIALS secret missing!")
+    exit(1)
 
 creds_dict = json.loads(creds_json)
 
@@ -32,65 +35,216 @@ creds = ServiceAccountCredentials.from_json_keyfile_dict(
 
 client = gspread.authorize(creds)
 
-# ==========================================
-# 2. GOOGLE SHEET CONFIGURATION
-# ==========================================
+# =========================================================
+# GOOGLE SHEET DETAILS
+# =========================================================
 
-spreadsheet_id = "1CKkvMXmWana29P4pMdPvo3nmZiC9OzQM1BC8U7BT9pw"
+spreadsheet_id = "1D3E5lyH2QUq55AzsJqSbJj2tNkmOQht_8xUmt0mdvbk"
 
 worksheet = client.open_by_key(
     spreadsheet_id
-).worksheet("Top 250 Stocks")
+).worksheet("RAW_DATA")
 
-# ==========================================
-# 3. NSE BHAVCOPY FETCHER
-# ==========================================
+# =========================================================
+# CREATE NSE SESSION
+# =========================================================
+
+def create_nse_session():
+
+    session = requests.Session()
+
+    session.headers.update({
+
+        'User-Agent': (
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/120.0 Safari/537.36'
+        ),
+
+        'Accept': (
+            'text/html,application/xhtml+xml,'
+            'application/xml;q=0.9,*/*;q=0.8'
+        ),
+
+        'Accept-Language': 'en-US,en;q=0.9',
+
+        'Referer': 'https://www.nseindia.com/'
+    })
+
+    try:
+
+        session.get(
+            "https://www.nseindia.com",
+            timeout=10
+        )
+
+    except:
+        pass
+
+    return session
+
+# =========================================================
+# FETCH DELIVERY DATA
+# =========================================================
+
+def fetch_delivery_data(date_obj):
+
+    date_str = date_obj.strftime("%d%m%Y")
+
+    url = (
+        f"https://archives.nseindia.com/products/content/"
+        f"sec_bhavdata_full_{date_str}.csv"
+    )
+
+    session = create_nse_session()
+
+    try:
+
+        response = session.get(
+            url,
+            timeout=30
+        )
+
+        print(f"Delivery URL: {url}")
+        print(f"Delivery Status: {response.status_code}")
+
+        if response.status_code != 200:
+
+            return None
+
+        from io import StringIO
+
+        df = pd.read_csv(
+            StringIO(response.text)
+        )
+
+        # =============================================
+        # CLEAN COLUMN NAMES
+        # =============================================
+
+        df.columns = [
+            c.strip()
+            for c in df.columns
+        ]
+
+        # =============================================
+        # CLEAN STRING VALUES
+        # =============================================
+
+        for col in df.columns:
+
+            if df[col].dtype == "object":
+
+                df[col] = (
+                    df[col]
+                    .astype(str)
+                    .str.strip()
+                )
+
+        # =============================================
+        # VALIDATE REQUIRED COLUMNS
+        # =============================================
+
+        required_cols = [
+            'SYMBOL',
+            'SERIES',
+            'DELIV_QTY',
+            'DELIV_PER'
+        ]
+
+        missing_cols = [
+            c for c in required_cols
+            if c not in df.columns
+        ]
+
+        if missing_cols:
+
+            print(
+                f"Missing Delivery Columns: "
+                f"{missing_cols}"
+            )
+
+            return None
+
+        # =============================================
+        # EQ ONLY
+        # =============================================
+
+        df = df[
+            df['SERIES'] == 'EQ'
+        ]
+
+        # =============================================
+        # NUMERIC CONVERSION
+        # =============================================
+
+        df['DELIV_QTY'] = pd.to_numeric(
+            df['DELIV_QTY'],
+            errors='coerce'
+        )
+
+        df['DELIV_PER'] = pd.to_numeric(
+            df['DELIV_PER'],
+            errors='coerce'
+        )
+
+        # =============================================
+        # FINAL DELIVERY DATAFRAME
+        # =============================================
+
+        delivery_df = df[[
+            'SYMBOL',
+            'DELIV_QTY',
+            'DELIV_PER'
+        ]].copy()
+
+        delivery_df.columns = [
+            'SYMBOL',
+            'DELIVERY_QTY',
+            'DELIVERY_PERCENT'
+        ]
+
+        print(
+            f"Delivery Rows: "
+            f"{len(delivery_df)}"
+        )
+
+        return delivery_df
+
+    except Exception as e:
+
+        print(f"Delivery Error: {str(e)}")
+
+        return None
+
+# =========================================================
+# FETCH BHAVCOPY
+# =========================================================
 
 def fetch_bhavcopy_for_date(date_obj):
 
     date_str = date_obj.strftime("%Y%m%d")
 
     url = (
-        "https://nsearchives.nseindia.com/content/cm/"
+        f"https://nsearchives.nseindia.com/content/cm/"
         f"BhavCopy_NSE_CM_0_0_0_{date_str}_F_0000.csv.zip"
     )
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0 Safari/537.36"
-        ),
-        "Accept": "*/*",
-        "Referer": "https://www.nseindia.com/"
-    }
+    session = create_nse_session()
 
     try:
 
-        # Create Session
-        session = requests.Session()
-
-        # Fetch ZIP
         response = session.get(
             url,
-            headers=headers,
             timeout=30
         )
 
-        # HTTP Check
+        print(f"Trying Date: {date_str}")
+        print(f"Bhavcopy Status: {response.status_code}")
+
         if response.status_code != 200:
 
-            print(
-                f"HTTP Error "
-                f"{response.status_code} "
-                f"for {date_str}"
-            )
-
             return None
-
-        # ==========================================
-        # OPEN ZIP FILE
-        # ==========================================
 
         with zipfile.ZipFile(
             io.BytesIO(response.content)
@@ -102,18 +256,26 @@ def fetch_bhavcopy_for_date(date_obj):
 
                 df = pd.read_csv(f)
 
-        # ==========================================
+        # =============================================
         # CLEAN COLUMN NAMES
-        # ==========================================
+        # =============================================
 
         df.columns = [
-            str(c).strip()
+            c.strip()
             for c in df.columns
         ]
 
-        # ==========================================
-        # DETECT REQUIRED COLUMNS
-        # ==========================================
+        # =============================================
+        # FETCH DELIVERY DATA
+        # =============================================
+
+        delivery_df = fetch_delivery_data(
+            date_obj
+        )
+
+        # =============================================
+        # COLUMN DETECTION
+        # =============================================
 
         sym_col = next(
             (
@@ -130,6 +292,7 @@ def fetch_bhavcopy_for_date(date_obj):
             (
                 c for c in [
                     'ClsPric',
+                    'CLOSE_PRICE',
                     'CLOSE'
                 ]
                 if c in df.columns
@@ -161,120 +324,164 @@ def fetch_bhavcopy_for_date(date_obj):
             None
         )
 
-        # ==========================================
-        # VALIDATE COLUMNS
-        # ==========================================
+        volume_col = next(
+            (
+                c for c in [
+                    'TtlTradgVol',
+                    'TTL_TRD_QNTY',
+                    'VOLUME'
+                ]
+                if c in df.columns
+            ),
+            None
+        )
+
+        # =============================================
+        # VALIDATION
+        # =============================================
 
         if not all([
             sym_col,
-            close_col,
-            turnover_col
+            turnover_col,
+            close_col
         ]):
 
-            print("Required columns missing!")
-            print(df.columns.tolist())
+            print(
+                "Required Bhavcopy columns missing."
+            )
 
             return None
 
-        # ==========================================
-        # KEEP ONLY EQ SERIES
-        # ==========================================
+        # =============================================
+        # EQ ONLY
+        # =============================================
 
         if series_col:
 
             df = df[
                 df[series_col]
                 .astype(str)
-                .str.strip()
-                == 'EQ'
+                .str.strip() == 'EQ'
             ]
 
-        # ==========================================
-        # REMOVE ETFs / BEES / GOLD
-        # ==========================================
-
-        filter_keywords = (
-            'BEES|ETF|GOLD|LIQUID'
-        )
-
-        df = df[
-            ~df[sym_col]
-            .astype(str)
-            .str.contains(
-                filter_keywords,
-                case=False,
-                na=False
-            )
-        ]
-
-        # ==========================================
-        # CLEAN TURNOVER COLUMN
-        # ==========================================
+        # =============================================
+        # NUMERIC CONVERSION
+        # =============================================
 
         df[turnover_col] = pd.to_numeric(
             df[turnover_col],
             errors='coerce'
         )
 
+        if volume_col:
+
+            df[volume_col] = pd.to_numeric(
+                df[volume_col],
+                errors='coerce'
+            )
+
+        # =============================================
+        # REMOVE EMPTY TURNOVER
+        # =============================================
+
         df = df.dropna(
             subset=[turnover_col]
         )
 
-        # ==========================================
+        # =============================================
         # SORT BY TURNOVER
-        # ==========================================
+        # =============================================
 
-        df_top = (
-            df
-            .sort_values(
-                by=turnover_col,
-                ascending=False
+        df = df.sort_values(
+            by=turnover_col,
+            ascending=False
+        )
+
+        # =============================================
+        # MERGE DELIVERY DATA
+        # =============================================
+
+        if delivery_df is not None:
+
+            df = df.merge(
+                delivery_df,
+                left_on=sym_col,
+                right_on='SYMBOL',
+                how='left'
             )
-            .head(250)
-        )
 
-        # ==========================================
-        # RETURN VALUES
-        # ==========================================
+        # =============================================
+        # FINAL COLUMNS
+        # =============================================
 
-        return df_top[
-            [
-                sym_col,
-                turnover_col,
-                close_col
-            ]
-        ].values.tolist()
+        final_cols = [
+            sym_col,
+            turnover_col,
+            close_col
+        ]
 
-    # ==========================================
-    # ZIP FILE ERROR
-    # ==========================================
+        if volume_col:
 
-    except zipfile.BadZipFile:
+            final_cols.append(
+                volume_col
+            )
 
-        print(
-            f"Bad ZIP file for {date_str}"
-        )
+        if 'DELIVERY_QTY' in df.columns:
 
-        return None
+            final_cols.append(
+                'DELIVERY_QTY'
+            )
 
-    # ==========================================
-    # GENERAL ERROR
-    # ==========================================
+        if 'DELIVERY_PERCENT' in df.columns:
+
+            final_cols.append(
+                'DELIVERY_PERCENT'
+            )
+
+        # =============================================
+        # FINAL DATAFRAME
+        # =============================================
+
+        final_df = df[
+            final_cols
+        ].copy()
+
+        # =============================================
+        # ROUND DELIVERY %
+        # =============================================
+
+        if 'DELIVERY_PERCENT' in final_df.columns:
+
+            final_df['DELIVERY_PERCENT'] = (
+                final_df[
+                    'DELIVERY_PERCENT'
+                ].round(2)
+            )
+
+        # =============================================
+        # SAFETY CHECK
+        # =============================================
+
+        print(final_df.head())
+        print(final_df.shape)
+
+        if len(final_df) > 0:
+
+            return final_df.values.tolist()
+
+        else:
+
+            return None
 
     except Exception as e:
 
-        print(
-            f"Fetch Error for "
-            f"{date_str}: {str(e)}"
-        )
-
-        traceback.print_exc()
+        print(f"Bhavcopy Error: {str(e)}")
 
         return None
 
-# ==========================================
-# 4. EXECUTION LOGIC
-# ==========================================
+# =========================================================
+# EXECUTION LOGIC
+# =========================================================
 
 date = datetime.now()
 
@@ -282,93 +489,144 @@ data_to_insert = None
 
 fetched_date_str = ""
 
+# =========================================================
+# TRY LAST 7 TRADING DAYS
+# =========================================================
+
 for i in range(7):
 
     test_date = date - timedelta(days=i)
 
-    # Skip Saturday and Sunday
+    # =============================================
+    # SKIP WEEKENDS
+    # =============================================
+
     if test_date.weekday() >= 5:
+
         continue
 
     print(
-        f"Trying "
+        f"\nTrying Trading Date: "
         f"{test_date.strftime('%d-%b-%Y')}"
     )
 
-    data_to_insert = fetch_bhavcopy_for_date(
+    temp_data = fetch_bhavcopy_for_date(
         test_date
     )
 
-    if data_to_insert:
+    # =============================================
+    # ONLY ACCEPT VALID DATA
+    # =============================================
 
-        fetched_date_str = (
-            test_date.strftime('%d-%b-%Y')
+    if (
+        temp_data
+        and len(temp_data) > 0
+    ):
+
+        data_to_insert = temp_data
+
+        fetched_date_str = test_date.strftime(
+            '%d-%b-%Y'
+        )
+
+        print(
+            f"Valid Data Found for "
+            f"{fetched_date_str}"
         )
 
         break
 
-# ==========================================
-# 5. UPDATE GOOGLE SHEET
-# ==========================================
+    else:
 
-if data_to_insert:
+        print(
+            f"No Valid Data for "
+            f"{test_date.strftime('%d-%b-%Y')}"
+        )
+
+# =========================================================
+# UPDATE GOOGLE SHEET
+# =========================================================
+
+if (
+    data_to_insert
+    and len(data_to_insert) > 0
+):
 
     try:
 
-        # Clear old data
-        worksheet.batch_clear(
-            ['A2:C1000']
+        print(
+            f"Rows Fetched: "
+            f"{len(data_to_insert)}"
         )
 
-        # Insert new data
+        # =============================================
+        # CLEAR ONLY AFTER VALID DATA
+        # =============================================
+
+        worksheet.batch_clear([
+            'A2:F5000'
+        ])
+
+        # =============================================
+        # HEADERS
+        # =============================================
+
+        headers = [[
+            "SYMBOL",
+            "TURNOVER",
+            "CLOSE_PRICE",
+            "VOLUME",
+            "DELIVERY_QTY",
+            "DELIVERY_PERCENT"
+        ]]
+
         worksheet.update(
-            range_name='A2',
-            values=data_to_insert
+            'A1',
+            headers
         )
 
-        # IST Timezone
-        ist = timezone(
+        # =============================================
+        # UPLOAD DATA
+        # =============================================
+
+        worksheet.update(
+            'A2',
+            data_to_insert
+        )
+
+        # =============================================
+        # STATUS MESSAGE
+        # =============================================
+
+        ist_now = (
+            datetime.utcnow() +
             timedelta(hours=5, minutes=30)
-        )
+        ).strftime('%d-%b %H:%M')
 
-        ist_now = datetime.now(ist).strftime(
-            '%d-%b-%Y %H:%M'
-        )
-
-        # Status Message
         status_msg = (
-            f"Data Date: {fetched_date_str} | "
-            f"Last Update: {ist_now} IST"
+            f"Bhavcopy Date: {fetched_date_str} | "
+            f"Updated: {ist_now} IST"
         )
 
-        # Update Status Cell
         worksheet.update(
-            range_name='K2',
-            values=[[status_msg]]
+            'H2',
+            [[status_msg]]
         )
 
         print(
-            f"SUCCESS: "
-            f"Top 250 Stocks Updated "
+            f"SUCCESS: RAW_DATA Updated "
             f"for {fetched_date_str}"
         )
 
     except Exception as e:
 
         print(
-            f"Google Sheet Error: "
-            f"{str(e)}"
+            f"Google Sheet Error: {str(e)}"
         )
-
-        traceback.print_exc()
-
-# ==========================================
-# 6. FAILURE MESSAGE
-# ==========================================
 
 else:
 
     print(
-        "FAILED"
+        "NO VALID DATA FOUND. "
+        "OLD SHEET DATA RETAINED."
     )
-
