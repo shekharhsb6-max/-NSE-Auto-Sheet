@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>NSE Breakout Scanner</title>
+<meta name="theme-color" content="#0e2417" />
+<!-- iOS "Add to Home Screen" behaviour -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="NSE Breakout" />
+<style>
+  :root{
+    --bg:#0e2417;
+    --bg-2:#123321;
+    --card:#15382a;
+    --gold:#d4af37;
+    --gold-soft:#e8cf7a;
+    --text:#eef3ea;
+    --text-dim:#9fb3a6;
+    --up:#5fd38d;
+    --down:#e2685f;
+    --border:#25523c;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  body{
+    background:
+      radial-gradient(circle at 20% 0%, rgba(212,175,55,0.08), transparent 40%),
+      linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 100%);
+    min-height:100vh;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  header{
+    padding:20px 18px 14px;
+    position:sticky; top:0; z-index:10;
+    background:linear-gradient(180deg, var(--bg) 70%, transparent);
+    backdrop-filter:blur(6px);
+  }
+  header h1{
+    margin:0; font-size:1.25rem; font-weight:700; letter-spacing:0.02em;
+    color:var(--gold-soft);
+  }
+  header .sub{ font-size:0.78rem; color:var(--text-dim); margin-top:4px; }
+  .status-bar{
+    display:flex; align-items:center; justify-content:space-between;
+    margin:10px 0 0; font-size:0.72rem; color:var(--text-dim);
+  }
+  #refreshBtn{
+    background:var(--card); border:1px solid var(--border); color:var(--gold-soft);
+    padding:6px 12px; border-radius:999px; font-size:0.72rem; font-weight:600;
+    display:flex; align-items:center; gap:6px;
+  }
+  #refreshBtn:active{ transform:scale(0.96); }
+  .spin{ animation:spin 0.8s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  main{ padding:8px 14px 40px; max-width:640px; margin:0 auto; }
+
+  .count-pill{
+    display:inline-block; background:rgba(212,175,55,0.12); border:1px solid var(--border);
+    color:var(--gold-soft); font-size:0.78rem; font-weight:600;
+    padding:5px 12px; border-radius:999px; margin:10px 0 14px;
+  }
+
+  .card{
+    background:var(--card); border:1px solid var(--border); border-radius:14px;
+    padding:14px 16px; margin-bottom:10px;
+    display:flex; align-items:center; justify-content:space-between;
+    animation:rise 0.35s ease both;
+  }
+  @keyframes rise{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+
+  .card .left .symbol{ font-size:1.02rem; font-weight:700; color:var(--text); }
+  .card .left .tag{
+    font-size:0.6rem; font-weight:600; color:var(--gold-soft);
+    border:1px solid var(--border); border-radius:999px; padding:2px 7px;
+    margin-left:6px; vertical-align:middle;
+  }
+  .rating{
+    font-size:0.62rem; font-weight:700; border-radius:999px;
+    padding:3px 9px; display:inline-block; margin-top:6px; letter-spacing:0.02em;
+  }
+  .rating-strongbuy{ background:rgba(95,211,141,0.18); color:var(--up); }
+  .rating-watchlist{ background:rgba(212,175,55,0.18); color:var(--gold-soft); }
+  .rating-earlybreakout{ background:rgba(95,211,141,0.14); color:#9be8b8; }
+  .rating-overheated{ background:rgba(226,104,95,0.14); color:#f0a79f; }
+  .rating-valuezone{ background:rgba(212,175,55,0.14); color:var(--gold-soft); }
+  .rating-fallingknife{ background:rgba(226,104,95,0.2); color:var(--down); }
+  .rating-avoid{ background:rgba(159,179,166,0.15); color:var(--text-dim); }
+  .card .left .dmas{ font-size:0.68rem; color:var(--text-dim); margin-top:3px; }
+  .card .right{ text-align:right; }
+  .card .right .price{ font-size:1.02rem; font-weight:700; color:var(--up); }
+  .card .right .vol{ font-size:0.68rem; color:var(--text-dim); margin-top:3px; }
+
+  .empty, .error{
+    text-align:center; padding:60px 20px; color:var(--text-dim); font-size:0.9rem;
+  }
+  .error{ color:var(--down); }
+
+  .skeleton{
+    height:64px; border-radius:14px; margin-bottom:10px;
+    background:linear-gradient(90deg, var(--card) 25%, #1a4531 50%, var(--card) 75%);
+    background-size:200% 100%; animation:shimmer 1.4s infinite;
+  }
+  @keyframes shimmer{ 0%{background-position:200% 0;} 100%{background-position:-200% 0;} }
+
+  footer{ text-align:center; padding:20px; font-size:0.68rem; color:var(--text-dim); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🌾 NSE Breakout Scanner</h1>
+  <div class="sub">Top volume stocks trading above 50/100/200 DMA</div>
+  <div class="status-bar">
+    <span id="statusText">Loading…</span>
+    <button id="refreshBtn" onclick="loadData()">
+      <span id="refreshIcon">↻</span> Refresh
+    </button>
+  </div>
+</header>
+
+<main>
+  <div id="content">
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+    <div class="skeleton"></div>
+  </div>
+</main>
+
+<footer>Data via NSE bhavcopy • Auto-updated daily ~8:15 PM IST</footer>
+
+<script>
+  // ⚠️ Fill these in after you deploy the Apps Script Web App.
+  const API_URL = "https://script.google.com/macros/s/AKfycbhttps://script.google.com/macros/s/AKfycbxAY-qPSte2nAIqVz6Hf8MSyRHfMcRsMCMpb02Gmpnos8ZuD2vwvewWoBm3YlNPOhcmDA/execz-qSy09P53ZbvVKmUfMtQdISstMi_UrhaiGkX-6YUhaxWRTWAAADT_JGc0zI3aco3KXA/exec?key=himadri-nse-8k3f2m9x"; // ends in /exec
+  const API_KEY = "himadri-nse-8k3f2m9x"; // must match Code.gs
+
+  const contentEl = document.getElementById("content");
+  const statusEl = document.getElementById("statusText");
+  const refreshIcon = document.getElementById("refreshIcon");
+
+  function fmtNum(n){
+    if (n === "" || n === null || n === undefined || isNaN(n)) return "-";
+    return Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 });
+  }
+
+  async function loadData(){
+    refreshIcon.classList.add("spin");
+    statusEl.textContent = "Refreshing…";
+    try{
+      const res = await fetch(`${API_URL}?key=${encodeURIComponent(API_KEY)}`);
+      const data = await res.json();
+
+      if (data.error){
+        contentEl.innerHTML = `<div class="error">⚠️ ${data.error}</div>`;
+        statusEl.textContent = "Error";
+        return;
+      }
+
+      statusEl.textContent = data.status || "Updated";
+
+      if (!data.stocks || data.stocks.length === 0){
+        contentEl.innerHTML = `<div class="empty">Aaj koi breakout stock nahi mila 🌱<br>Kal fir check karein.</div>`;
+        return;
+      }
+
+      const pill = `<div class="count-pill">${data.count} stocks · Bull Run + Buy/Average Out</div>`;
+      const ratingClass = (r) => "rating-" + String(r || "").toLowerCase().replace(/[^a-z]/g, "");
+      const cards = data.stocks.map(s => `
+        <div class="card">
+          <div class="left">
+            <div class="symbol">${s.symbol}</div>
+            <div class="dmas">Prev Close ₹${fmtNum(s.prevClose)} · Diff from 200D: ${fmtNum(s.diff200)}%</div>
+            <div class="dmas">${s.signal || ""}</div>
+            <div class="rating ${ratingClass(s.rating)}">${s.rating || ""}</div>
+          </div>
+          <div class="right">
+            <div class="price">₹${fmtNum(s.cmp)}</div>
+            <div class="vol">Turnover ${fmtNum(s.turnover)}</div>
+          </div>
+        </div>
+      `).join("");
+
+      contentEl.innerHTML = pill + cards;
+    } catch(err){
+      contentEl.innerHTML = `<div class="error">⚠️ Data load nahi hua. API URL check karein.</div>`;
+      statusEl.textContent = "Offline";
+    } finally {
+      refreshIcon.classList.remove("spin");
+    }
+  }
+
+  loadData();
+</script>
+</body>
+</html>
