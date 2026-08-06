@@ -32,14 +32,16 @@ def fetch_bhavcopy_for_date(date_obj):
                 csv_filename = z.namelist()[0]
                 with z.open(csv_filename) as f:
                     df = pd.read_csv(f)
-            sym_col = 'TckrSymb' if 'TckrSymb' in df.columns else 'SYMBOL'
-            if 'PrvsClsgPric' in df.columns:
+       sym_col = 'TckrSymb' if 'TckrSymb' in df.columns else 'SYMBOL'
+
+if 'PrvsClsgPric' in df.columns:
     close_col = 'PrvsClsgPric'
 elif 'ClsPric' in df.columns:
     close_col = 'ClsPric'
 else:
     close_col = 'CLOSE'
-            series_col = 'SctySrs' if 'SctySrs' in df.columns else 'SERIES'
+
+series_col = 'SctySrs' if 'SctySrs' in df.columns else 'SERIES'
             vol_col = 'TtlTradgVol'
             for c in ['TtlTradgVol', 'TtlTrdQty', 'TotTrdQty', 'TOTTRDQTY']:
                 if c in df.columns:
