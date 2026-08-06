@@ -32,6 +32,11 @@ def fetch_bhavcopy_for_date(date_obj):
                 csv_filename = z.namelist()[0]
                 with z.open(csv_filename) as f:
                     df = pd.read_csv(f)
+                         print("Downloaded URL:", url)
+print("Columns:", df.columns.tolist())
+
+ultra = df[df['TckrSymb'] == 'ULTRACEMCO']
+print(ultra[['TckrSymb', 'PrvsClsgPric', 'ClsPric', 'LastPric']])
        sym_col = 'TckrSymb' if 'TckrSymb' in df.columns else 'SYMBOL'
 
 if 'PrvsClsgPric' in df.columns:
