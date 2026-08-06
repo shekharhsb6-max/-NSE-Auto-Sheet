@@ -72,7 +72,7 @@ def fetch_bhavcopy_for_date(date_obj):
         print("\nColumns Found:")
         print(df.columns.tolist())
 
-        # ------------------------------------
+        # --------------------------------------------------
 
         sym_col = "TckrSymb" if "TckrSymb" in df.columns else "SYMBOL"
 
@@ -104,7 +104,7 @@ def fetch_bhavcopy_for_date(date_obj):
         if vol_col is None:
             raise Exception("Volume column not found")
 
-        # ------------------------------------
+        # --------------------------------------------------
 
         if series_col in df.columns:
             df = df[df[series_col].astype(str).str.strip() == "EQ"]
@@ -119,9 +119,9 @@ def fetch_bhavcopy_for_date(date_obj):
             )
         ]
 
-        # ------------------------------------
-        # DEBUG ULTRACEMCO
-        # ------------------------------------
+        # --------------------------------------------------
+        # DEBUG
+        # --------------------------------------------------
 
         ultra = df[df[sym_col] == "ULTRACEMCO"]
 
@@ -142,7 +142,7 @@ def fetch_bhavcopy_for_date(date_obj):
 
             print(ultra[cols].to_string(index=False))
 
-        # ------------------------------------
+        # --------------------------------------------------
 
         df_top = (
             df
@@ -197,26 +197,29 @@ if data_to_insert:
 
     worksheet.batch_clear(["A2:C251"])
 
-worksheet.update(
-    range_name="A2",
-    values=data_to_insert
-)
+    worksheet.update(
+        range_name="A2",
+        values=data_to_insert
+    )
 
     ist = (
-        datetime.utcnow() +
-        timedelta(hours=5, minutes=30)
+        datetime.utcnow()
+        + timedelta(hours=5, minutes=30)
     ).strftime("%d-%b %H:%M")
 
+    status_msg = (
+        f"Data Date: {fetched_date} | "
+        f"Last Update: {ist} (IST)"
+    )
+
     worksheet.update(
-        "N1",
-        [[
-            f"Data Date: {fetched_date} | Last Update: {ist} (IST)"
-        ]]
+        range_name="N1",
+        values=[[status_msg]]
     )
 
     print("\nSUCCESS")
     print("Spreadsheet :", spreadsheet.title)
-    print("Rows Updated:", len(data_to_insert))
+    print("Rows Updated :", len(data_to_insert))
 
 else:
 
