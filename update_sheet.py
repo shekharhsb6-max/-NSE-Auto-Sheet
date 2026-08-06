@@ -197,7 +197,10 @@ if data_to_insert:
 
     worksheet.batch_clear(["A2:C251"])
 
-    worksheet.update("A2", data_to_insert)
+worksheet.update(
+    range_name="A2",
+    values=data_to_insert
+)
 
     ist = (
         datetime.utcnow() +
